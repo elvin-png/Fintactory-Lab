@@ -218,3 +218,16 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# FinFactor Lab local data, test dependencies and credentials
+.test-deps/
+.pytest-tmp/
+*.duckdb*
+.env.*
+!.env.example
+secrets.toml
+*.pem
+*.key
+*.p12
+*.pfx
+work/
