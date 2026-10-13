@@ -90,3 +90,38 @@ def load_daily_prices(
             """,
             [symbol, start_date, end_date],
         ).fetchdf()
+
+
+def latest_trade_date(
+    symbol: str, db_path: str | Path = DEFAULT_DB_PATH
+) -> date | None:
+    """Return the latest stored session for a symbol, if any."""
+    validate_symbol(symbol)
+    with _connect(db_path) as connection:
+        return connection.execute(
+            "SELECT MAX(trade_date) FROM daily_prices WHERE symbol = ?", [symbol]
+        ).fetchone()[0]
+
+
+def load_many_daily_prices(
+    symbols: list[str],
+    start_date: date,
+    end_date: date,
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> pd.DataFrame:
+    """Read a multi-stock panel in one query, ordered by session and symbol."""
+    if start_date > end_date:
+        raise ValueError("开始日期不能晚于结束日期")
+    symbols = list(dict.fromkeys(validate_symbol(symbol) for symbol in symbols))
+    with _connect(db_path) as connection:
+        if not symbols:
+            return connection.execute(
+                "SELECT * FROM daily_prices WHERE FALSE"
+            ).fetchdf()
+        placeholders = ", ".join("?" for _ in symbols)
+        return connection.execute(
+            f"""SELECT {', '.join(COLUMNS)} FROM daily_prices
+                WHERE symbol IN ({placeholders}) AND trade_date BETWEEN ? AND ?
+                ORDER BY trade_date, symbol""",
+            [*symbols, start_date, end_date],
+        ).fetchdf()

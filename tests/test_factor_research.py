@@ -2,7 +2,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from finfactor_lab.factor_research import build_research_panel, calculate_rank_ic
+from finfactor_lab.factor_research import (
+    build_research_panel, build_research_panel_from_db, calculate_rank_ic,
+)
+from finfactor_lab.storage import save_daily_prices
 
 
 @pytest.fixture
@@ -120,3 +123,20 @@ def test_duplicate_rows_and_incomplete_calendar_are_rejected(sample_prices):
     panel = build_research_panel(prices, dates)
     with pytest.raises(ValueError, match="Duplicate"):
         calculate_rank_ic(pd.concat([panel, panel.iloc[[0]]]))
+
+
+def test_rank_ic_from_multi_stock_duckdb(sample_prices, tmp_path):
+    prices, dates = sample_prices
+    stored = prices.copy()
+    stored["open"] = stored["close"]
+    stored["high"] = stored["close"]
+    stored["low"] = stored["close"]
+    db = tmp_path / "research.duckdb"
+    save_daily_prices(stored, db)
+    panel = build_research_panel_from_db(
+        ["000001", "000002", "000003"],
+        dates[0].date(), dates[-1].date(), db, dates,
+    )
+    ic = calculate_rank_ic(panel).set_index("trade_date")
+    assert ic.loc[dates[20], "n_symbols"] == 3
+    assert ic.loc[dates[20], "rank_ic"] == pytest.approx(0.5)

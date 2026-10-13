@@ -3,9 +3,25 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from datetime import date
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from finfactor_lab.storage import DEFAULT_DB_PATH, load_many_daily_prices
+
+
+def build_research_panel_from_db(
+    symbols: list[str],
+    start_date: date,
+    end_date: date,
+    db_path: str | Path = DEFAULT_DB_PATH,
+    trading_dates: Iterable[object] | None = None,
+) -> pd.DataFrame:
+    """Load a multi-symbol DuckDB panel for momentum and ex-post labels."""
+    prices = load_many_daily_prices(symbols, start_date, end_date, db_path)
+    return build_research_panel(prices, trading_dates)
 
 
 def build_research_panel(
