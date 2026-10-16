@@ -1,7 +1,7 @@
 # Fintactory-Lab
 A Python-based financial data analysis, multi-factor research and quantitative backtesting platform.
 
-当前实现 A 股日线行情的获取、批量增量入库、质量检查、动量因子与横截面 Rank IC 研究，以及单股票 Streamlit 展示。不包含回测或交易功能。使用 Python 3.11+、AkShare、Pandas、DuckDB 和 Streamlit。
+当前实现 A 股日线行情的获取、批量增量入库、质量检查、动量因子与横截面 Rank IC 研究、基础离线回测，以及单股票 Streamlit 展示。不包含实盘交易功能。使用 Python 3.11+、AkShare、Pandas、DuckDB 和 Streamlit。
 
 ## 安装
 
@@ -62,6 +62,39 @@ print(daily_ic.dropna(subset=["rank_ic"]))
 ```
 
 当前行情页面仍按单只股票获取和展示。若本地只有一只股票，先用下述模拟多股票测试验证横截面 IC，不要把单股票结果解释为有效 IC。
+
+## 基础回测
+
+`finfactor_lab.backtest` 从已有 DuckDB 行情表读取股票池。默认在每月最后一个市场交易日收盘后生成目标权重，下一交易日按开盘价执行；也可将 `rebalance_frequency` 设为 `daily` 或 `weekly`。周度、月度回测必须通过 `trading_dates` 传入独立、完整且有序的市场交易日历，覆盖所需动量回看期。动量策略只读取截至信号日的价格、成交量和成交额，不读取因子研究的未来收益标签。买卖均按 `commission_rate` 收费，买入数量按 `lot_size` 向下取整；若费用和整手约束使目标组合无法完整买入，各买单按相同比例缩减，剩余现金保留。
+
+```python
+from datetime import date
+import pandas as pd
+from finfactor_lab.backtest import (
+    BacktestConfig, BacktestEngine, DuckDBPriceSource, TopNMomentumStrategy,
+)
+
+# 请自行准备覆盖回看期和回测期的完整 A 股市场交易日文件。
+trading_dates = pd.DatetimeIndex(pd.read_csv("path/to/trading_dates.csv")["trade_date"])
+config = BacktestConfig(
+    symbols=("000001", "000002", "600000"),
+    start_date=date(2024, 1, 1),
+    end_date=date(2024, 12, 31),
+    initial_cash=1_000_000,
+    commission_rate=0.001,
+)
+result = BacktestEngine(config, TopNMomentumStrategy(top_n=2), DuckDBPriceSource()).run(
+    trading_dates=trading_dates,
+)
+print(result.equity_curve.tail())
+print(result.trades.tail())
+```
+
+可向 `run(benchmark_prices=...)` 传入包含 `trade_date`、`close` 的 DataFrame；它必须覆盖回测的每个交易日。`equity_curve` 随后增加 `benchmark_return` 和以初始资金归一化的 `benchmark_equity`。结果还包含 `trades`、`orders` 和每日 `positions`。日度回测可省略日历，此时 `BacktestResult.calendar_source` 为 `observed_prices`，`calendar_warning` 标记行情日期并集可能漏掉整个市场交易日的限制；周度和月度回测缺少独立日历时会报错。
+
+成交判断只使用开盘价，以及可选的开盘前已知状态。`run(open_tradability=...)` 接收包含 `symbol`、`trade_date`、布尔值 `tradable_at_open` 的 DataFrame，并要求覆盖回测区间内已存储的每条行情。未提供时，有效开盘价被视为可交易；日线的当日收盘价、全天成交量及成交额不会用于开盘成交判断，因此仅靠 DuckDB 日线无法可靠识别开盘前已知的停牌。每日 `positions.valuation_status` 区分 `reported_close` 和 `carried_forward`，`equity_curve.carried_positions` 统计沿用估值的持仓数。
+
+该基础模型使用不复权价格、固定比例手续费和开盘价模拟成交，未建模滑点、涨跌停、冲击成本、税费、分红及拆股。公司行为附近的净值可能失真，结果不应视为可执行交易收益。
 
 ## 测试
 
